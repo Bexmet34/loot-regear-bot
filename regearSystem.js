@@ -1,5 +1,22 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags } = require('discord.js');
-const { loadDB, saveDB } = require('./db');
+const { 
+    EmbedBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ModalBuilder, 
+    TextInputBuilder, 
+    TextInputStyle, 
+    MessageFlags 
+} = require('discord.js');
+const { loadDB, saveDB, saveRegearLog } = require('./db');
+
+// Eğer FileUploadBuilder ve LabelBuilder varsa alalım (discord.js sürümüne bağlı olarak)
+let FileUploadBuilder, LabelBuilder;
+try {
+    const djs = require('discord.js');
+    FileUploadBuilder = djs.FileUploadBuilder;
+    LabelBuilder = djs.LabelBuilder;
+} catch (e) {}
 
 async function sendRegearButton(client, channelId) {
     const channel = client.channels.cache.get(channelId);
@@ -9,7 +26,7 @@ async function sendRegearButton(client, channelId) {
         .setTitle('🛡️ Regear Talep Sistemi')
         .setDescription(
             'Regear talebinde bulunmak için aşağıdaki butona tıklayın.\n' +
-            'Nerede öldüğünüzü seçin ve ekran görüntünüzü gönderin.'
+            'Açılan pencerede nerede öldüğünüzü yazıp ekran görüntünüzü ekleyin.'
         )
         .setColor(0xE74C3C)
         .setFooter({ text: 'Regear Sistemi' });
@@ -47,39 +64,51 @@ async function handleRegearSetup(interaction, client) {
     return interaction.editReply({
         content:
             `✅ **Regear sistemi kuruldu!**\n` +
-            `📌 Buton Kanalı: ${buttonChannel}\n` +
-            `📋 Log Kanalı: ${logChannel}\n` +
-            `👑 Yetkili Rol: ${authRole}`
+            `📌 Buton Kanalı: <#${buttonChannel.id}>\n` +
+            `📋 Log Kanalı: <#${logChannel.id}>\n` +
+            `👑 Yetkili Rol: <@&${authRole.id}>`
     });
 }
 
 async function handleRegearButton(interaction) {
-    const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('regear_location_select')
-        .setPlaceholder('📍 Nerede öldünüz?')
-        .addOptions(
-            new StringSelectMenuOptionBuilder()
-                .setLabel('Solo').setDescription('Tek başına farm / avlanırken')
-                .setValue('Solo').setEmoji('⚔️'),
-            new StringSelectMenuOptionBuilder()
-                .setLabel('Content').setDescription('İçerik / dungeon / etkinlik')
-                .setValue('Content').setEmoji('🗺️'),
-            new StringSelectMenuOptionBuilder()
-                .setLabel('ZvZ').setDescription('Guild savaşı / ZvZ')
-                .setValue('ZvZ').setEmoji('🏰'),
-            new StringSelectMenuOptionBuilder()
-                .setLabel('Ganked').setDescription('Pusuya düşürüldünüz')
-                .setValue('Ganked').setEmoji('🗡️'),
-            new StringSelectMenuOptionBuilder()
-                .setLabel('Diğer').setDescription('Diğer sebepler')
-                .setValue('Diğer').setEmoji('❓')
-        );
+    const modal = new ModalBuilder()
+        .setCustomId('regearModal')
+        .setTitle('Regear Talep Formu');
 
-    return interaction.reply({
-        content: '🛡️ **Regear Talebi**\nLütfen nerede öldüğünüzü seçin:',
-        components: [new ActionRowBuilder().addComponents(selectMenu)],
-        flags: MessageFlags.Ephemeral,
-    });
+    const locationInput = new TextInputBuilder()
+        .setCustomId('regear_location')
+        .setLabel('Nerede öldünüz? (Solo, ZvZ, vb.)')
+        .setPlaceholder('Örn: ZvZ, Ganked, Content, Solo')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+    const row1 = new ActionRowBuilder().addComponents(locationInput);
+
+    if (FileUploadBuilder) {
+        try {
+            const fileUpload = new FileUploadBuilder()
+                .setCustomId('regear_image')
+                .setRequired(true);
+
+            // Discord API LabelBuilder veya ActionRowBuilder istiyor olabilir.
+            if (LabelBuilder) {
+                const label = new LabelBuilder()
+                    .setLabel('Lütfen ekran görüntünüzü yükleyin')
+                    .setFileUploadComponent(fileUpload);
+                modal.addComponents(row1, label);
+            } else {
+                const row2 = new ActionRowBuilder().addComponents(fileUpload);
+                modal.addComponents(row1, row2);
+            }
+        } catch (e) {
+            console.error("FileUploadBuilder hatası:", e);
+            modal.addComponents(row1);
+        }
+    } else {
+        modal.addComponents(row1);
+    }
+
+    return interaction.showModal(modal);
 }
 
 async function handleRegearMarkPaid(interaction) {
@@ -106,87 +135,81 @@ async function handleRegearMarkPaid(interaction) {
     });
 }
 
-async function handleRegearSelect(interaction, client) {
-    const location = interaction.values[0];
+async function handleRegearModalSubmit(interaction, client) {
+    const location = interaction.fields.getTextInputValue('regear_location');
+    
+    let attachment = null;
+    
+    // Resim Yükleme varsa alalım
+    if (interaction.fields.getUploadedFiles) {
+        try {
+            const files = interaction.fields.getUploadedFiles('regear_image');
+            if (files) {
+                // Collection ise first() kullanılır, dizi ise [0]
+                attachment = typeof files.first === 'function' ? files.first() : files[0];
+            }
+        } catch (e) {
+            console.error("Dosya okunurken hata oluştu:", e);
+        }
+    }
 
-    await interaction.update({
-        content:
-            `✅ **${location}** seçildi!\n\n` +
-            `📸 Lütfen şimdi bu kanala **ekran görüntünüzü** normal bir mesaj olarak gönderin.\n` +
-            `*(Siz resmi gönderdikten hemen sonra mesajınız kanalı kirletmemesi için otomatik olarak silinecektir)*\n` +
-            `⏰ 90 saniye süreniz var.`,
-        components: [],
-    });
+    if (!attachment) {
+        return interaction.reply({
+            content: '❌ Ekran görüntüsü alınamadı! Lütfen tekrar deneyin.',
+            flags: MessageFlags.Ephemeral
+        });
+    }
 
-    const filter = m => m.author.id === interaction.user.id && m.attachments.size > 0;
+    const db         = loadDB();
+    const guildDb    = db[interaction.guildId] || (db.regear ? db : { regear: {} });
+    const logChannel = client.channels.cache.get(guildDb.regear.logChannelId);
 
-    try {
-        const collected = await interaction.channel.awaitMessages({
-            filter,
-            max: 1,
-            time: 90_000,
-            errors: ['time'],
+    if (logChannel) {
+        const embed = new EmbedBuilder()
+            .setTitle('🛡️ Yeni Regear Talebi')
+            .setColor(0xE74C3C)
+            .addFields(
+                { name: '👤 Talep Eden', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: false },
+                { name: '📍 Öldüğü Yer', value: `**${location}**`, inline: true },
+                { name: '🕐 Tarih',       value: new Date().toLocaleString('tr-TR'),                   inline: true }
+            )
+            .setImage(`attachment://${attachment.name}`)
+            .setFooter({ text: 'Regear Sistemi' })
+            .setTimestamp();
+
+        const actionRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('regear_mark_paid')
+                .setLabel('Ödendi')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('💸')
+        );
+
+        // Kanala mesajı gönder
+        const sentMessage = await logChannel.send({ 
+            embeds: [embed], 
+            files: [attachment],
+            components: [actionRow] 
         });
 
-        const msg        = collected.first();
-        const attachment = msg.attachments.first();
-
-        const db         = loadDB();
-        const guildDb    = db[interaction.guildId] || (db.regear ? db : { regear: {} });
-        const logChannel = client.channels.cache.get(guildDb.regear.logChannelId);
-
-        if (logChannel) {
-            const embed = new EmbedBuilder()
-                .setTitle('🛡️ Yeni Regear Talebi')
-                .setColor(0xE74C3C)
-                .addFields(
-                    { name: '👤 Talep Eden', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: false },
-                    { name: '📍 Öldüğü Yer', value: `**${location}**`, inline: true },
-                    { name: '🕐 Tarih',       value: new Date().toLocaleString('tr-TR'),                   inline: true }
-                )
-                .setImage(`attachment://${attachment.name}`)
-                .setFooter({ text: 'Regear Sistemi' })
-                .setTimestamp();
-
-            const actionRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('regear_mark_paid')
-                    .setLabel('Ödendi')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('💸')
-            );
-
-            await logChannel.send({ 
-                embeds: [embed], 
-                files: [{ attachment: attachment.url, name: attachment.name }],
-                components: [actionRow] 
-            });
-
-            // Kanaldaki ekran görüntüsü mesajını anında siliyoruz
-            await msg.delete().catch(() => {});
-
-            // Sadece kişiye özel başarılı mesajı gönderiyoruz
-            await interaction.followUp({
-                content: `✅ <@${interaction.user.id}> Regear talebiniz başarıyla iletildi!`,
-                flags: MessageFlags.Ephemeral
-            });
-        } else {
-            // Kanaldaki ekran görüntüsü mesajını anında siliyoruz
-            await msg.delete().catch(() => {});
-
-            await interaction.followUp({
-                content: '❌ Hata: Log kanalı bulunamadı veya botun yetkisi yok! Lütfen yetkililere `/regear setup` yapmalarını söyleyin.',
-                flags: MessageFlags.Ephemeral
-            });
+        // Gönderilen mesajdaki resmin kalıcı URL'sini alalım
+        let permanentUrl = "";
+        if (sentMessage.attachments.size > 0) {
+            permanentUrl = sentMessage.attachments.first().url;
         }
 
-    } catch {
-        try {
-            await interaction.followUp({
-                content: '⏰ Süre doldu! Regear talebiniz iptal edildi. Tekrar deneyin.',
-                flags: MessageFlags.Ephemeral,
-            });
-        } catch { /* interaction expired */ }
+        // SQLite Veritabanına kaydet
+        saveRegearLog(interaction.user.id, interaction.guildId, location, permanentUrl);
+
+        await interaction.reply({
+            content: `✅ <@${interaction.user.id}> Regear talebiniz başarıyla iletildi!`,
+            flags: MessageFlags.Ephemeral
+        });
+    } else {
+        await interaction.reply({
+            content: '❌ Hata: Log kanalı bulunamadı veya botun yetkisi yok! Lütfen yetkililere `/regear setup` yapmalarını söyleyin.',
+            flags: MessageFlags.Ephemeral
+        });
     }
 }
 
@@ -194,5 +217,5 @@ module.exports = {
     handleRegearSetup,
     handleRegearButton,
     handleRegearMarkPaid,
-    handleRegearSelect
+    handleRegearModalSubmit
 };

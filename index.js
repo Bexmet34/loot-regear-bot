@@ -11,7 +11,7 @@ const {
 require('dotenv').config();
 
 const { handleLootSetup, handleLootButton, handleLootModalSubmit } = require('./lootSystem');
-const { handleRegearSetup, handleRegearButton, handleRegearMarkPaid, handleRegearSelect } = require('./regearSystem');
+const { handleRegearSetup, handleRegearButton, handleRegearMarkPaid, handleRegearModalSubmit } = require('./regearSystem');
 
 // ─── TOKEN & CLIENT ID ────────────────────────────────────────────────────────
 const TOKEN     = process.env.TOKEN;
@@ -124,14 +124,14 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // ── Select Menu Interactions ────────────────────────────────────────────────
-    if (interaction.isStringSelectMenu() && interaction.customId === 'regear_location_select') {
-        await handleRegearSelect(interaction, client);
-    }
-
     // ── Modal Submit Interactions ───────────────────────────────────────────────
-    if (interaction.isModalSubmit() && interaction.customId === 'lootModal') {
-        await handleLootModalSubmit(interaction, client);
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'lootModal') {
+            await handleLootModalSubmit(interaction, client);
+        }
+        if (interaction.customId === 'regearModal') {
+            await handleRegearModalSubmit(interaction, client);
+        }
     }
 });
 
