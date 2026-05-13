@@ -72,7 +72,7 @@ function updateGiveawayParticipants(messageId, participants) {
 }
 
 function getActiveGiveaways() {
-    const rows = sqlite.prepare('SELECT * FROM giveaways WHERE status = "active"').all();
+    const rows = sqlite.prepare("SELECT * FROM giveaways WHERE status = ?").all('active');
     return rows.map(row => {
         row.participants = JSON.parse(row.participants);
         return row;
@@ -80,8 +80,8 @@ function getActiveGiveaways() {
 }
 
 function endGiveaway(messageId) {
-    const stmt = sqlite.prepare('UPDATE giveaways SET status = "ended" WHERE message_id = ?');
-    stmt.run(messageId);
+    const stmt = sqlite.prepare("UPDATE giveaways SET status = ? WHERE message_id = ?");
+    stmt.run('ended', messageId);
 }
 
 module.exports = { 
