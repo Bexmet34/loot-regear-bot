@@ -202,6 +202,7 @@ async function finalizeGiveaway(client, gw) {
         endGiveaway(gw.message_id);
 
         if (gw.participants.length === 0) {
+            console.log(`[Giveaway] ${gw.prize} için katılım olmadı, çekiliş iptal edildi.`);
             const embed = EmbedBuilder.from(message.embeds[0])
                 .setColor('#ED4245')
                 .setTitle(`🎉 Çekiliş Sona Erdi: ${gw.prize}`)
@@ -236,9 +237,17 @@ async function finalizeGiveaway(client, gw) {
             content: `🎊 Tebrikler ${winnerMentions}! **${gw.prize}** ödülünü kazandınız!` 
         });
 
+        console.log(`[Giveaway] ${gw.prize} sonuçlandı. Kazananlar: ${winnerMentions}`);
+
     } catch (err) {
-        console.error('Çekiliş sonuçlandırma hatası:', err);
-        endGiveaway(gw.message_id); // Hata olsa bile bitmiş say ki tekrar denemesin
+        if (err.code === 10008) {
+            console.warn(`[Giveaway] Mesaj bulunamadı (silinmiş olabilir), çekiliş iptal edildi. ID: ${gw.message_id}`);
+        } else if (err.code === 10003) {
+            console.warn(`[Giveaway] Kanal bulunamadı, çekiliş iptal edildi. ID: ${gw.channel_id}`);
+        } else {
+            console.error('[Giveaway] Çekiliş sonuçlandırma hatası:', err);
+        }
+        endGiveaway(gw.message_id); 
     }
 }
 
