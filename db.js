@@ -31,9 +31,66 @@ sqlite.exec(`
     )
 `);
 
+sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS giveaways (
+        message_id TEXT PRIMARY KEY,
+        channel_id TEXT,
+        guild_id TEXT,
+        prize TEXT,
+        description TEXT,
+        winner_count INTEGER,
+        end_time INTEGER,
+        participants TEXT DEFAULT '[]',
+        status TEXT DEFAULT 'active'
+    )
+`);
+
 function saveRegearLog(userId, guildId, location, imageUrl) {
     const stmt = sqlite.prepare('INSERT INTO regear_logs (user_id, guild_id, location, image_url) VALUES (?, ?, ?, ?)');
     stmt.run(userId, guildId, location, imageUrl);
 }
 
-module.exports = { loadDB, saveDB, saveRegearLog };
+function saveGiveaway(data) {
+    const stmt = sqlite.prepare(`
+        INSERT INTO giveaways (message_id, channel_id, guild_id, prize, description, winner_count, end_time, participants)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(data.message_id, data.channel_id, data.guild_id, data.prize, data.description, data.winner_count, data.end_time, JSON.stringify(data.participants || []));
+}
+
+function getGiveaway(messageId) {
+    const row = sqlite.prepare('SELECT * FROM giveaways WHERE message_id = ?').get(messageId);
+    if (row) {
+        row.participants = JSON.parse(row.participants);
+    }
+    return row;
+}
+
+function updateGiveawayParticipants(messageId, participants) {
+    const stmt = sqlite.prepare('UPDATE giveaways SET participants = ? WHERE message_id = ?');
+    stmt.run(JSON.stringify(participants), messageId);
+}
+
+function getActiveGiveaways() {
+    const rows = sqlite.prepare('SELECT * FROM giveaways WHERE status = "active"').all();
+    return rows.map(row => {
+        row.participants = JSON.parse(row.participants);
+        return row;
+    });
+}
+
+function endGiveaway(messageId) {
+    const stmt = sqlite.prepare('UPDATE giveaways SET status = "ended" WHERE message_id = ?');
+    stmt.run(messageId);
+}
+
+module.exports = { 
+    loadDB, 
+    saveDB, 
+    saveRegearLog, 
+    saveGiveaway, 
+    getGiveaway, 
+    updateGiveawayParticipants, 
+    getActiveGiveaways, 
+    endGiveaway 
+};

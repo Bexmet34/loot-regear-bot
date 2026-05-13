@@ -12,6 +12,7 @@ require('dotenv').config();
 
 const { handleLootSetup, handleLootButton, handleLootModalSubmit } = require('./lootSystem');
 const { handleRegearSetup, handleRegearButton, handleRegearMarkPaid, handleRegearModalSubmit } = require('./regearSystem');
+const { handleGiveawayCommand, handleGiveawayModalSubmit, handleGiveawayJoin, checkGiveaways } = require('./giveawaySystem');
 
 // ─── TOKEN & CLIENT ID ────────────────────────────────────────────────────────
 const TOKEN     = process.env.TOKEN;
@@ -76,6 +77,11 @@ const commands = [
                         .setRequired(true)
                 )
         ),
+
+    new SlashCommandBuilder()
+        .setName('giveaway')
+        .setDescription('Çekiliş başlatır')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 ];
 
 // ─── REGISTER SLASH COMMANDS ──────────────────────────────────────────────────
@@ -93,9 +99,14 @@ async function registerCommands() {
 }
 
 // ─── READY ────────────────────────────────────────────────────────────────────
-client.once('clientReady', async () => {
-    console.log('Loot Hesap Makinesi Aktif!');
+client.once('ready', async () => {
+    console.log('Bot Aktif!');
     await registerCommands();
+
+    // Çekiliş kontrolü (Her 30 saniyede bir)
+    setInterval(() => {
+        checkGiveaways(client);
+    }, 30000);
 });
 
 // ─── INTERACTIONS ─────────────────────────────────────────────────────────────
@@ -108,6 +119,9 @@ client.on('interactionCreate', async interaction => {
         }
         if (interaction.commandName === 'regear' && interaction.options.getSubcommand() === 'setup') {
             await handleRegearSetup(interaction, client);
+        }
+        if (interaction.commandName === 'giveaway') {
+            await handleGiveawayCommand(interaction);
         }
     }
 
@@ -122,6 +136,9 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId === 'regear_mark_paid') {
             await handleRegearMarkPaid(interaction);
         }
+        if (interaction.customId === 'join_giveaway') {
+            await handleGiveawayJoin(interaction);
+        }
     }
 
     // ── Modal Submit Interactions ───────────────────────────────────────────────
@@ -131,6 +148,9 @@ client.on('interactionCreate', async interaction => {
         }
         if (interaction.customId === 'regearModal') {
             await handleRegearModalSubmit(interaction, client);
+        }
+        if (interaction.customId === 'giveawayModal') {
+            await handleGiveawayModalSubmit(interaction);
         }
     }
 });
