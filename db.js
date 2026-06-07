@@ -45,6 +45,14 @@ sqlite.exec(`
     )
 `);
 
+sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS giveaway_cooldowns (
+        user_id TEXT PRIMARY KEY,
+        cooldown_remaining INTEGER
+    )
+`);
+
+
 function saveRegearLog(userId, guildId, location, imageUrl) {
     const stmt = sqlite.prepare('INSERT INTO regear_logs (user_id, guild_id, location, image_url) VALUES (?, ?, ?, ?)');
     stmt.run(userId, guildId, location, imageUrl);
@@ -84,6 +92,27 @@ function endGiveaway(messageId) {
     stmt.run('ended', messageId);
 }
 
+function getUserCooldown(userId) {
+    const row = sqlite.prepare('SELECT cooldown_remaining FROM giveaway_cooldowns WHERE user_id = ?').get(userId);
+    return row ? row.cooldown_remaining : 0;
+}
+
+function setUserCooldown(userId, count) {
+    const stmt = sqlite.prepare(`
+        INSERT INTO giveaway_cooldowns (user_id, cooldown_remaining) 
+        VALUES (?, ?) 
+        ON CONFLICT(user_id) DO UPDATE SET cooldown_remaining = ?
+    `);
+    stmt.run(userId, count, count);
+}
+
+function decrementAllCooldowns() {
+    // Tüm cooldownları 1 azalt
+    sqlite.prepare('UPDATE giveaway_cooldowns SET cooldown_remaining = cooldown_remaining - 1 WHERE cooldown_remaining > 0').run();
+    // 0 veya daha az olanları temizle
+    sqlite.prepare('DELETE FROM giveaway_cooldowns WHERE cooldown_remaining <= 0').run();
+}
+
 module.exports = { 
     loadDB, 
     saveDB, 
@@ -92,5 +121,8 @@ module.exports = {
     getGiveaway, 
     updateGiveawayParticipants, 
     getActiveGiveaways, 
-    endGiveaway 
+    endGiveaway,
+    getUserCooldown,
+    setUserCooldown,
+    decrementAllCooldowns
 };

@@ -12,7 +12,10 @@ const {
     getGiveaway, 
     updateGiveawayParticipants, 
     getActiveGiveaways, 
-    endGiveaway 
+    endGiveaway,
+    getUserCooldown,
+    setUserCooldown,
+    decrementAllCooldowns
 } = require('./db');
 
 /**
@@ -200,6 +203,9 @@ async function finalizeGiveaway(client, gw) {
         const message = await channel.messages.fetch(gw.message_id);
 
         endGiveaway(gw.message_id);
+        
+        // Çekiliş bittiğinde tüm aktif cooldownları 1 azalt
+        decrementAllCooldowns();
 
         if (gw.participants.length === 0) {
             console.log(`[Giveaway] ${gw.prize} için katılım olmadı, çekiliş iptal edildi.`);
@@ -214,11 +220,30 @@ async function finalizeGiveaway(client, gw) {
 
         const winners = [];
         const participants = [...gw.participants];
-        const winnerCount = Math.min(gw.winner_count, participants.length);
+        
+        // Cooldown'ı (bekleme süresi) olmayan katılımcıları filtrele
+        const eligibleParticipants = participants.filter(id => getUserCooldown(id) <= 0);
+        
+        const winnerCount = Math.min(gw.winner_count, eligibleParticipants.length);
+
+        if (winnerCount === 0) {
+            console.log(`[Giveaway] ${gw.prize} için geçerli (cooldown'da olmayan) katılımcı bulunamadı.`);
+            const embed = EmbedBuilder.from(message.embeds[0])
+                .setColor('#ED4245')
+                .setTitle(`🎉 Çekiliş Sona Erdi: ${gw.prize}`)
+                .setFields([{ name: 'Sonuç', value: 'Geçerli bir katılımcı bulunamadığı için kazanan belirlenemedi.' }]);
+
+            await message.edit({ embeds: [embed], components: [] });
+            return;
+        }
 
         for (let i = 0; i < winnerCount; i++) {
-            const randomIndex = Math.floor(Math.random() * participants.length);
-            winners.push(participants.splice(randomIndex, 1)[0]);
+            const randomIndex = Math.floor(Math.random() * eligibleParticipants.length);
+            const winnerId = eligibleParticipants.splice(randomIndex, 1)[0];
+            winners.push(winnerId);
+            
+            // Kazanan kişiye 37 çekilişlik bekleme süresi ver (35-40 ortalaması)
+            setUserCooldown(winnerId, 37);
         }
 
         const winnerMentions = winners.map(id => `<@${id}>`).join(', ');
